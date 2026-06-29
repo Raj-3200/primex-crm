@@ -1,0 +1,69 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: primex_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: primex
+      POSTGRES_PASSWORD: primex_pass
+      POSTGRES_DB: primex_db
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U primex -d primex_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - primex_dev_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: primex_redis_dev
+    restart: unless-stopped
+    command: redis-server --requirepass redis_pass
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_pass", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - primex_dev_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: primex_backend_dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://primex:primex_pass@postgres:5432/primex_db
+      REDIS_URL: redis://:redis_pass@redis:6379/0
+      DEBUG: "true"
+    volumes:
+      - ./backend:/app
+      - uploads_dev_data:/app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - primex_dev_net
+
+volumes:
+  postgres_dev_data:
+  uploads_dev_data:
+
+networks:
+  primex_dev_net:
+    driver: bridge

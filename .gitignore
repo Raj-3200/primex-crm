@@ -1,0 +1,70 @@
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Build outputs
+.next/
+out/
+*.pyc
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads
+uploads/
+!uploads/.gitkeep
+
+# SSL certificates
+nginx/ssl/
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.nyc_output
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Alembic versions (keep tracked)
+# backend/alembic/versions/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Turbopack / Next.js cache
+.turbo/
