@@ -52,7 +52,7 @@ async def get_current_user(
         raise credentials_exception
 
     # Import here to avoid circular imports
-    from app.users.repository import UserRepository
+    from app.auth.repository import UserRepository
 
     user = await UserRepository(db).get_by_id(user_id)
 

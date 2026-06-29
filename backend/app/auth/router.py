@@ -69,11 +69,12 @@ async def update_me(
     return await AuthService(db).update_profile(current_user, data)
 
 
-@router.post("/change-password", status_code=204)
+@router.post("/change-password", status_code=200)
 async def change_password(
     data: ChangePasswordRequest,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> None:
+) -> dict:
     """Change current user's password. Revokes all refresh tokens."""
     await AuthService(db).change_password(current_user, data)
+    return {"message": "Password changed successfully"}

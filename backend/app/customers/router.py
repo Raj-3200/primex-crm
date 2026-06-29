@@ -72,14 +72,15 @@ async def update_customer(
     return await CustomerService(db).update(id, data, updated_by=str(current_user.id))
 
 
-@router.delete("/{id}", status_code=204)
+@router.delete("/{id}", status_code=200)
 async def delete_customer(
     id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-) -> None:
+) -> dict:
     """Soft-delete a customer (marks as deleted, data retained)."""
     await CustomerService(db).delete(id, deleted_by=str(current_user.id))
+    return {"message": "Customer deleted"}
 
 
 @router.get("/{id}/timeline", response_model=list[TimelineEvent])

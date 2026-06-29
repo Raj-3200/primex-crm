@@ -1,7 +1,7 @@
 """
 PrimeX Services CRM — Async Database Engine & Session Factory.
 
-Uses SQLAlchemy 2.0 async API with asyncpg driver.
+Supports both PostgreSQL (asyncpg) and SQLite (aiosqlite) automatically.
 `expire_on_commit=False` prevents DetachedInstanceError in async context.
 """
 
@@ -17,27 +17,41 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 
-# ── Engine ────────────────────────────────────────────────────────────────────
-engine = create_async_engine(
-    settings.database_url,
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True,        # Verify connections before use
-    pool_recycle=300,          # Recycle connections every 5 minutes
-    echo=settings.debug,       # Log SQL only in debug mode
-)
+# ── Engine ─────────────────────────────────────────────────────────────────────
+_is_sqlite = settings.database_url.startswith("sqlite")
 
-# ── Session Factory ───────────────────────────────────────────────────────────
-async_session_factory = async_sessionmaker(
+_engine_kwargs: dict = {
+    "echo": settings.debug,
+}
+
+if not _is_sqlite:
+    # PostgreSQL-specific pool settings
+    _engine_kwargs.update(
+        pool_size=20,
+        max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=300,
+    )
+else:
+    # SQLite requires check_same_thread=False for async
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
+
+# Alias for backwards compat with seed script
+AsyncSessionLocal = async_sessionmaker(
     engine,
     class_=AsyncSession,
-    expire_on_commit=False,    # CRITICAL: prevents DetachedInstanceError
+    expire_on_commit=False,
     autocommit=False,
     autoflush=False,
 )
 
+# ── Session Factory ────────────────────────────────────────────────────────────
+async_session_factory = AsyncSessionLocal
 
-# ── Dependency ────────────────────────────────────────────────────────────────
+
+# ── Dependency ─────────────────────────────────────────────────────────────────
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency that yields a database session.

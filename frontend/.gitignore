@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev/seed scripts
+seed.js
+fix_passwords.js
+inspect.js
+inspect_schema.mjs
+t.js
+db_check.js

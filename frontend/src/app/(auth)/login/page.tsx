@@ -6,14 +6,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Zap, LogIn } from "lucide-react";
+import { Eye, EyeOff, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn, getErrorMessage } from "@/lib/utils";
-import apiClient from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 
 const loginSchema = z.object({
@@ -35,21 +34,41 @@ export default function LoginPage() {
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
+    defaultValues: { email: "admin@primex.com", password: "" },
   });
 
   const onSubmit = async (values: LoginForm) => {
     setIsLoading(true);
     try {
-      const { data: tokens } = await apiClient.post("/auth/login", values);
-      // Fetch user profile with new token
-      const { data: user } = await apiClient.get("/auth/me", {
+      // POST to Next.js API route → authenticates against Neon DB
+      const loginRes = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const tokens = await loginRes.json();
+
+      if (!loginRes.ok) {
+        toast.error(tokens?.detail || "Invalid email or password");
+        return;
+      }
+
+      // Get user profile via proxy
+      const meRes = await fetch("/api/auth/me", {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       });
+      const user = await meRes.json();
+
+      if (!meRes.ok) {
+        toast.error(user?.detail || "Failed to load profile");
+        return;
+      }
+
       setAuth(user, tokens.access_token, tokens.refresh_token);
       toast.success(`Welcome back, ${user.full_name}!`);
       router.push("/dashboard");
-    } catch (err) {
-      toast.error(getErrorMessage(err));
+    } catch {
+      toast.error("Connection error. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -60,7 +79,7 @@ export default function LoginPage() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="bg-card/80 backdrop-blur-xl rounded-3xl border border-border p-8 shadow-premium-lg"
+      className="bg-card/90 backdrop-blur-xl rounded-3xl border border-border p-8 shadow-premium-lg"
     >
       {/* Logo */}
       <div className="flex flex-col items-center mb-8">
@@ -142,20 +161,20 @@ export default function LoginPage() {
         {/* Submit */}
         <Button
           type="submit"
-          className="w-full h-11 rounded-xl shadow-premium text-base font-semibold"
+          className="w-full h-11 rounded-xl shadow-premium text-base font-semibold mt-2"
           disabled={isLoading}
         >
           {isLoading ? (
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-            />
+            <span className="flex items-center gap-2">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+              />
+              Signing in...
+            </span>
           ) : (
-            <>
-              <LogIn className="w-4 h-4 mr-2" />
-              Sign In
-            </>
+            "Sign In"
           )}
         </Button>
       </form>

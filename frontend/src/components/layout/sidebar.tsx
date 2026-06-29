@@ -47,7 +47,7 @@ const navGroups = [
       { label: "Orders", href: "/orders", icon: ShoppingBag },
       { label: "Solar Cleaning", href: "/solar", icon: Sun },
       { label: "Tank Cleaning", href: "/tanks", icon: Droplets },
-      { label: "AMC", href: "/amc", icon: RefreshCcw },
+      { label: "AMC Contracts", href: "/amc", icon: RefreshCcw },
       { label: "Calendar", href: "/calendar", icon: Calendar },
     ],
   },
@@ -68,7 +68,7 @@ const navGroups = [
     ],
   },
   {
-    label: "Intelligence",
+    label: "Analytics",
     items: [
       { label: "Reports", href: "/reports", icon: BarChart3 },
       { label: "Documents", href: "/documents", icon: FolderOpen },

@@ -1,305 +1,213 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import Link from "next/link";
 import {
-  ArrowLeft, Sun, Droplets, Layers, Calendar, Clock,
-  IndianRupee, User, FileText, Edit, Trash2, ChevronRight,
+  ArrowLeft, Sun, Droplets, Activity, User, Phone,
+  MapPin, Calendar, IndianRupee, Clock, CheckCircle, UserCheck,
 } from "lucide-react";
-
-import { useOrder, useUpdateOrderStatus, useDeleteOrder } from "@/features/orders/hooks/use-orders";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
-import type { Order } from "@/features/orders/types";
-import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import Link from "next/link";
 
-const STATUS_FLOW: Record<string, string[]> = {
-  PENDING: ["SCHEDULED", "CANCELLED"],
-  SCHEDULED: ["IN_PROGRESS", "CANCELLED"],
-  IN_PROGRESS: ["COMPLETED", "CANCELLED"],
-  COMPLETED: [],
-  CANCELLED: [],
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  SCHEDULED: "Mark as Scheduled",
-  IN_PROGRESS: "Start Job",
-  COMPLETED: "Mark Completed",
-  CANCELLED: "Cancel Order",
+const SERVICE_ICONS: Record<string, any> = { SOLAR: Sun, TANK: Droplets, COMBINED: Activity };
+const SERVICE_COLORS: Record<string, string> = {
+  SOLAR: "bg-amber-500/15 text-amber-600",
+  TANK: "bg-blue-500/15 text-blue-600",
+  COMBINED: "bg-green-500/15 text-green-600",
 };
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const { data: order, isLoading, isError } = useOrder(id);
-  const { mutate: updateStatus, isPending: isUpdating } = useUpdateOrderStatus();
-  const { mutate: deleteOrder, isPending: isDeleting } = useDeleteOrder();
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Skeleton className="h-80 rounded-2xl lg:col-span-2" />
-          <Skeleton className="h-80 rounded-2xl" />
-        </div>
+  const { data, isLoading } = useQuery({
+    queryKey: ["order", id],
+    queryFn: async () => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`/api/orders/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
+    enabled: !!id,
+  });
+
+  if (isLoading) return (
+    <div className="space-y-6">
+      <Skeleton className="h-8 w-48 rounded-xl" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Skeleton className="h-80 rounded-2xl lg:col-span-2" />
+        <Skeleton className="h-80 rounded-2xl" />
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (isError || !order) {
-    return (
-      <EmptyState
-        title="Order not found"
-        description="This order may have been deleted."
-        icon={FileText}
-        action={<Button asChild><Link href="/orders">Back to Orders</Link></Button>}
-      />
-    );
-  }
+  if (!data) return (
+    <div className="space-y-4">
+      <Button variant="ghost" asChild><Link href="/orders"><ArrowLeft className="w-4 h-4 mr-2" />Back</Link></Button>
+      <Card className="p-12 text-center rounded-2xl">
+        <Activity className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+        <p className="text-muted-foreground">Order not found</p>
+      </Card>
+    </div>
+  );
 
-  const nextStatuses = STATUS_FLOW[order.status] ?? [];
-
-  const handleDelete = () => {
-    deleteOrder(id, {
-      onSuccess: () => {
-        toast.success("Order deleted");
-        router.push("/orders");
-      },
-    });
-  };
+  const { order, solar_detail, tank_detail, activity_logs = [] } = data;
+  const Icon = SERVICE_ICONS[order.service_type] || Activity;
+  const iconClass = SERVICE_COLORS[order.service_type] || "bg-muted text-muted-foreground";
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild className="rounded-xl">
-            <Link href="/orders"><ArrowLeft className="w-4 h-4" /></Link>
-          </Button>
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/orders"><ArrowLeft className="w-4 h-4" /></Link>
+        </Button>
+        <div className="flex items-center gap-3 flex-1">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconClass}`}>
+            <Icon className="w-5 h-5" />
+          </div>
           <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold font-display font-mono">{order.order_number}</h1>
-              <StatusBadge status={order.status} />
-              <StatusBadge status={order.service_type} showDot={false} />
-            </div>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Created {formatDate(order.created_at)}
-            </p>
+            <h1 className="text-xl font-bold font-display">{order.order_number}</h1>
+            <p className="text-sm text-muted-foreground">{order.service_type.replace("_", " ")} Service</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {nextStatuses.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button className="rounded-xl shadow-premium" disabled={isUpdating}>
-                  Update Status <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {nextStatuses.map((s) => (
-                  <DropdownMenuItem
-                    key={s}
-                    onClick={() => updateStatus({ id, status: s })}
-                  >
-                    {STATUS_LABELS[s] || s}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="icon" className="rounded-xl text-destructive hover:bg-destructive/10 hover:border-destructive">
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent className="rounded-2xl">
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Order</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Delete order {order.order_number}? This action is reversible by an admin.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-destructive hover:bg-destructive/90 rounded-xl"
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                >
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+        <StatusBadge status={order.status} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Main Details */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Customer & Schedule */}
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="p-6 rounded-2xl">
-              <h2 className="text-sm font-bold font-display mb-4">Order Details</h2>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <User className="w-4 h-4" />
-                    <span>Customer</span>
-                  </div>
-                  <Link
-                    href={`/customers/${order.customer_id}`}
-                    className="font-semibold text-primary hover:underline"
-                  >
-                    {order.customer_name || "View Customer"}
-                  </Link>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Calendar className="w-4 h-4" />
-                    <span>Scheduled</span>
-                  </div>
-                  <span className="font-semibold">
-                    {order.scheduled_date
-                      ? `${formatDate(order.scheduled_date)}${order.scheduled_time ? ` at ${order.scheduled_time}` : ""}`
-                      : "Not scheduled"}
-                  </span>
-                </div>
-                {order.completed_at && (
-                  <div className="space-y-3 col-span-2">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Clock className="w-4 h-4" />
-                      <span>Completed</span>
-                    </div>
-                    <span className="font-semibold text-green-600">
-                      {formatDateTime(order.completed_at)}
-                    </span>
-                  </div>
-                )}
+          {/* Customer */}
+          <Card className="p-5 rounded-2xl">
+            <h2 className="text-sm font-bold font-display mb-3 text-muted-foreground uppercase tracking-wide">Customer</h2>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-muted-foreground" />
+                <Link href={`/customers/${order.customer_id}`} className="font-semibold hover:text-primary transition-colors">
+                  {order.customer_name}
+                </Link>
               </div>
-              {order.notes && (
-                <>
-                  <Separator className="my-4" />
-                  <p className="text-sm text-muted-foreground">{order.notes}</p>
-                </>
+              {order.customer_phone && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Phone className="w-4 h-4" />{order.customer_phone}</div>}
+              {order.customer_address && <div className="flex items-center gap-2 text-sm text-muted-foreground"><MapPin className="w-4 h-4" />{order.customer_address}{order.customer_city ? `, ${order.customer_city}` : ""}</div>}
+            </div>
+          </Card>
+
+          {/* Schedule */}
+          <Card className="p-5 rounded-2xl">
+            <h2 className="text-sm font-bold font-display mb-3 text-muted-foreground uppercase tracking-wide">Schedule</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Scheduled Date</p>
+                  <p className="font-medium">{order.scheduled_date ? formatDate(order.scheduled_date) : "Not set"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Time</p>
+                  <p className="font-medium">{order.scheduled_time ? String(order.scheduled_time).slice(0, 5) : "Not set"}</p>
+                </div>
+              </div>
+              {order.completed_at && (
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                    <p className="font-medium">{formatDate(order.completed_at)}</p>
+                  </div>
+                </div>
               )}
+              {order.assigned_name && (
+                <div className="flex items-center gap-2 text-sm">
+                  <UserCheck className="w-4 h-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Assigned To</p>
+                    <p className="font-medium">{order.assigned_name}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Service Details */}
+          {solar_detail && (
+            <Card className="p-5 rounded-2xl">
+              <h2 className="text-sm font-bold font-display mb-3 text-muted-foreground uppercase tracking-wide">Solar Details</h2>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-muted-foreground">Panel Count</p><p className="font-semibold">{solar_detail.panel_count}</p></div>
+                <div><p className="text-xs text-muted-foreground">Capacity</p><p className="font-semibold">{solar_detail.capacity_kw} kW</p></div>
+                <div><p className="text-xs text-muted-foreground">Roof Type</p><p className="font-semibold">{solar_detail.roof_type}</p></div>
+                <div><p className="text-xs text-muted-foreground">Panel Type</p><p className="font-semibold">{solar_detail.panel_type}</p></div>
+                {solar_detail.remarks && <div className="col-span-2"><p className="text-xs text-muted-foreground">Remarks</p><p className="font-medium">{solar_detail.remarks}</p></div>}
+              </div>
             </Card>
-          </motion.div>
-
-          {/* Solar Detail */}
-          {order.solar_detail && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-              <Card className="p-6 rounded-2xl">
-                <div className="flex items-center gap-2 mb-4">
-                  <Sun className="w-4 h-4 text-amber-500" />
-                  <h2 className="text-sm font-bold font-display">Solar Cleaning Details</h2>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                  {[
-                    { label: "Panels", value: order.solar_detail.panel_count },
-                    { label: "Capacity", value: `${order.solar_detail.capacity_kw} kW` },
-                    { label: "Roof Type", value: order.solar_detail.roof_type.replace("_", " ") },
-                    { label: "Panel Type", value: order.solar_detail.panel_type },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-muted/50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                      <p className="font-semibold">{value}</p>
-                    </div>
-                  ))}
-                </div>
-                {order.solar_detail.remarks && (
-                  <p className="text-sm text-muted-foreground mt-3">{order.solar_detail.remarks}</p>
-                )}
-              </Card>
-            </motion.div>
           )}
-
-          {/* Tank Detail */}
-          {order.tank_detail && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
-              <Card className="p-6 rounded-2xl">
-                <div className="flex items-center gap-2 mb-4">
-                  <Droplets className="w-4 h-4 text-blue-500" />
-                  <h2 className="text-sm font-bold font-display">Tank Cleaning Details</h2>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                  {[
-                    { label: "Tank Type", value: order.tank_detail.tank_type },
-                    { label: "Capacity", value: `${order.tank_detail.capacity_liters} L` },
-                    { label: "Tanks", value: order.tank_detail.number_of_tanks },
-                    { label: "Chemical", value: order.tank_detail.chemical_used || "—" },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-muted/50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                      <p className="font-semibold">{value}</p>
-                    </div>
-                  ))}
-                </div>
-                {order.tank_detail.remarks && (
-                  <p className="text-sm text-muted-foreground mt-3">{order.tank_detail.remarks}</p>
-                )}
-              </Card>
-            </motion.div>
+          {tank_detail && (
+            <Card className="p-5 rounded-2xl">
+              <h2 className="text-sm font-bold font-display mb-3 text-muted-foreground uppercase tracking-wide">Tank Details</h2>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-muted-foreground">Tank Type</p><p className="font-semibold">{tank_detail.tank_type}</p></div>
+                <div><p className="text-xs text-muted-foreground">Capacity</p><p className="font-semibold">{tank_detail.capacity_liters}L</p></div>
+                <div><p className="text-xs text-muted-foreground">No. of Tanks</p><p className="font-semibold">{tank_detail.number_of_tanks}</p></div>
+                {tank_detail.chemical_used && <div><p className="text-xs text-muted-foreground">Chemical</p><p className="font-semibold">{tank_detail.chemical_used}</p></div>}
+                {tank_detail.remarks && <div className="col-span-2"><p className="text-xs text-muted-foreground">Remarks</p><p className="font-medium">{tank_detail.remarks}</p></div>}
+              </div>
+            </Card>
           )}
         </div>
 
-        {/* Pricing Sidebar */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
-          <Card className="p-6 rounded-2xl sticky top-24">
-            <div className="flex items-center gap-2 mb-4">
-              <IndianRupee className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-bold font-display">Pricing</h2>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">{formatCurrency(order.subtotal)}</span>
+        {/* Right Sidebar */}
+        <div className="space-y-4">
+          {/* Pricing */}
+          <Card className="p-5 rounded-2xl">
+            <h2 className="text-sm font-bold font-display mb-3 text-muted-foreground uppercase tracking-wide">Pricing</h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(order.subtotal)}</span></div>
+              {order.discount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>-{formatCurrency(order.discount)}</span></div>}
+              {order.tax_amount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax ({order.tax_rate}%)</span><span>{formatCurrency(order.tax_amount)}</span></div>}
+              <div className="flex justify-between font-bold text-base pt-2 border-t border-border">
+                <span>Total</span><span className="text-primary">{formatCurrency(order.total_amount)}</span>
               </div>
-              {order.discount > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Discount</span>
-                  <span className="tabular-nums text-green-600">−{formatCurrency(order.discount)}</span>
-                </div>
-              )}
-              {order.tax_rate > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax ({order.tax_rate}%)</span>
-                  <span className="tabular-nums">{formatCurrency(order.tax_amount)}</span>
-                </div>
-              )}
-              <Separator />
-              <div className="flex justify-between font-bold text-base">
-                <span>Total</span>
-                <span className="tabular-nums text-primary">{formatCurrency(order.total_amount)}</span>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-border">
-              <p className="text-xs text-muted-foreground text-center">
-                Payment tracking coming in Phase 2
-              </p>
             </div>
           </Card>
-        </motion.div>
+
+          {/* Notes */}
+          {order.notes && (
+            <Card className="p-5 rounded-2xl">
+              <h2 className="text-sm font-bold font-display mb-2 text-muted-foreground uppercase tracking-wide">Notes</h2>
+              <p className="text-sm text-muted-foreground">{order.notes}</p>
+            </Card>
+          )}
+
+          {/* Activity Log */}
+          <Card className="p-5 rounded-2xl">
+            <h2 className="text-sm font-bold font-display mb-3 text-muted-foreground uppercase tracking-wide">Activity</h2>
+            {activity_logs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No activity recorded</p>
+            ) : (
+              <div className="space-y-2">
+                {activity_logs.map((log: any, i: number) => (
+                  <motion.div key={log.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+                    className="flex gap-2 text-xs">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                    <div>
+                      <p className="font-medium">{log.action || log.message || "Action performed"}</p>
+                      <p className="text-muted-foreground">{log.full_name} · {formatDate(log.created_at)}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </div>
   );

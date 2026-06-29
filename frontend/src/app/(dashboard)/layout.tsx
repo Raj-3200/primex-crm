@@ -13,15 +13,28 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, _hasHydrated } = useAuthStore();
   const { isMobileOpen, closeMobile } = useSidebarStore();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (_hasHydrated && !isAuthenticated) {
       router.push("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [_hasHydrated, isAuthenticated, router]);
+
+  // Show spinner until Zustand rehydrates from localStorage
+  if (!_hasHydrated) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full"
+        />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) return null;
 

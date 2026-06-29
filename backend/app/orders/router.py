@@ -85,11 +85,12 @@ async def update_order_status(
     return await OrderService(db).update_status(id, data, updated_by=str(current_user.id))
 
 
-@router.delete("/{id}", status_code=204)
+@router.delete("/{id}", status_code=200)
 async def delete_order(
     id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
-) -> None:
+) -> dict:
     """Soft-delete an order."""
     await OrderService(db).delete(id, deleted_by=str(current_user.id))
+    return {"message": "Order deleted"}

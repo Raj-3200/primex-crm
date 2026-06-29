@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # ── Redis ─────────────────────────────────────────────────────────────────
     redis_url: str = Field(
-        default="redis://localhost:6379/0",
+        default="",
         alias="REDIS_URL",
     )
 

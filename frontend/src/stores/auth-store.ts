@@ -17,10 +17,12 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
+  _hasHydrated: boolean;
 
   setAuth: (user: AuthUser, accessToken: string, refreshToken: string) => void;
   setUser: (user: AuthUser) => void;
   clearAuth: () => void;
+  setHasHydrated: (state: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -30,9 +32,11 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      _hasHydrated: false,
+
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
 
       setAuth: (user, accessToken, refreshToken) => {
-        // Also store in localStorage for the API client interceptor
         if (typeof window !== "undefined") {
           localStorage.setItem("access_token", accessToken);
           localStorage.setItem("refresh_token", refreshToken);
@@ -63,6 +67,9 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );
