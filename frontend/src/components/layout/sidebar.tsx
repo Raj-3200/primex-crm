@@ -21,8 +21,6 @@ import {
   FolderOpen,
   Bell,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   Zap,
   LogOut,
 } from "lucide-react";
@@ -156,7 +154,7 @@ function NavItem({ item, isCollapsed, isActive, onClick }: NavItemProps) {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { isCollapsed, toggleCollapse } = useSidebarStore();
+  const { isCollapsed } = useSidebarStore();
   const { user, clearAuth } = useAuthStore();
   const router = useRouter();
 
@@ -284,19 +282,7 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* ── Collapse Toggle ───────────────────────────────────────── */}
-        <motion.button
-          onClick={toggleCollapse}
-          className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-sidebar-background border border-sidebar-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors z-50"
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          {isCollapsed ? (
-            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-          ) : (
-            <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground" />
-          )}
-        </motion.button>
+
       </motion.aside>
     </TooltipProvider>
   );
