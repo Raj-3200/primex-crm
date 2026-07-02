@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import jwt from "jsonwebtoken";
+import { requireAuth, requireAuthPayload, SECRET, DB_URL } from "@/lib/server-auth";
 
-const DB = "postgresql://neondb_owner:npg_R2ABjSL4EfPT@ep-royal-sun-adbm2icx-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require";
-const SECRET = process.env.JWT_SECRET || "primex-crm-secret-key-2024-neon-production";
-
-function auth(req: NextRequest): { sub: string; role: string } {
-  const token = (req.headers.get("authorization") || "").replace("Bearer ", "").trim();
-  if (!token) throw new Error("No token");
-  return jwt.verify(token, SECRET, { algorithms: ["HS256"] }) as { sub: string; role: string };
-}
 
 // GET /api/customers — paginated, filtered list with order counts
 export async function GET(req: NextRequest) {
-  try { auth(req); } catch { return NextResponse.json({ detail: "Unauthorized" }, { status: 401 }); }
+  const authError = requireAuth(req);
+  if (authError) return authError;
 
   const { searchParams } = new URL(req.url);
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
@@ -24,7 +17,7 @@ export async function GET(req: NextRequest) {
   const offset = (page - 1) * per_page;
 
   try {
-    const sql = neon(DB);
+    const sql = neon(DB_URL);
     const sp = search ? `%${search}%` : "";
 
     // Use neon's tagged template — all values are properly escaped by Neon's driver
@@ -66,8 +59,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/customers
 export async function POST(req: NextRequest) {
-  let userId: string;
-  try { const p = auth(req); userId = p.sub; } catch { return NextResponse.json({ detail: "Unauthorized" }, { status: 401 }); }
+  const authResult = requireAuthPayload(req);
+  if ('error' in authResult) return authResult.error;
+  const userId = authResult.payload.sub;
 
   try {
     const body = await req.json();
@@ -78,10 +72,16 @@ export async function POST(req: NextRequest) {
     if (!address?.trim()) return NextResponse.json({ detail: "Address is required" }, { status: 400 });
     if (!property_type) return NextResponse.json({ detail: "Property type is required" }, { status: 400 });
 
-    const sql = neon(DB);
-    const countRow = await sql`SELECT COUNT(*)::int AS cnt FROM customers WHERE is_deleted=false`;
-    const num = String((countRow[0]?.cnt ?? 0) + 1).padStart(4, "0");
-    const customer_id = `PX-C-${num}`;
+    const sql = neon(DB_URL);
+    const maxRow = await sql`
+      SELECT COALESCE(
+        MAX(CAST(SPLIT_PART(customer_id, '-', 3) AS INTEGER)),
+        0
+      ) AS max_num
+      FROM customers
+      WHERE customer_id LIKE 'PX-C-%'
+    `;
+    const customer_id = `PX-C-${String((maxRow[0]?.max_num ?? 0) + 1).padStart(4, '0')}`;
 
     const rows = await sql`
       INSERT INTO customers(id,customer_id,name,phone,alternate_phone,email,address,latitude,longitude,maps_url,gst_number,property_type,lead_source,notes,created_by,is_deleted)

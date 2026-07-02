@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -123,8 +123,10 @@ function CompanySection() {
     },
   });
 
-  const onSubmit = async (data: CompanyForm) => {
-    await new Promise((r) => setTimeout(r, 600));
+  const onSubmit = async (_data: CompanyForm) => {
+    // Company info is org-level config — saved to localStorage for display only
+    // In a multi-company setup this would go to a settings API
+    localStorage.setItem("primex_company_info", JSON.stringify(_data));
     toast.success("Company info updated successfully");
   };
 
@@ -205,7 +207,17 @@ function SecuritySection() {
   });
 
   const onSubmit = async (data: PasswordForm) => {
-    await new Promise((r) => setTimeout(r, 800));
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
+    const res = await fetch("/api/auth/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ current_password: data.current_password, new_password: data.new_password }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      toast.error(json.detail || "Failed to change password");
+      return;
+    }
     toast.success("Password changed successfully");
     reset();
   };
@@ -376,9 +388,9 @@ function NotificationsSection() {
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 500));
-    setSaving(false);
+    localStorage.setItem("primex_notification_prefs", JSON.stringify(settings));
     toast.success("Notification preferences saved");
+    setSaving(false);
   };
 
   return (

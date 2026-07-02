@@ -1,8 +1,14 @@
 {
-  "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
   "framework": "nextjs",
+  "buildCommand": "npm run build",
   "outputDirectory": ".next",
-  "regions": ["sin1"]
+  "installCommand": "npm ci --prefer-offline",
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
+      ]
+    }
+  ]
 }

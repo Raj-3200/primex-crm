@@ -1,85 +1,92 @@
 import { NextRequest, NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
-import jwt from "jsonwebtoken";
+import { requireAuth, requireAuthPayload, getDb } from "@/lib/server-auth";
 
-const DB = "postgresql://neondb_owner:npg_R2ABjSL4EfPT@ep-royal-sun-adbm2icx-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require";
-const SECRET = process.env.JWT_SECRET || "primex-crm-secret-key-2024-neon-production";
-
-function auth(req: NextRequest) {
-  const token = (req.headers.get("authorization") || "").replace("Bearer ", "").trim();
-  if (!token) throw new Error("No token");
-  return jwt.verify(token, SECRET, { algorithms: ["HS256"] }) as { sub: string; role: string };
-}
-
-// Expenses derived from order discounts + external tracking via notes
-// In production this would be an expenses table; for now we track expenses as order metadata
 export async function GET(req: NextRequest) {
-  try { auth(req); } catch { return NextResponse.json({ detail: "Unauthorized" }, { status: 401 }); }
-
+  const authError = requireAuth(req);
+  if (authError) return authError;
   try {
-    const sql = neon(DB);
+    const sql = getDb();
+    const { searchParams } = new URL(req.url);
+    const category = searchParams.get("category") || "";
+    const date_from = searchParams.get("date_from") || "";
+    const date_to = searchParams.get("date_to") || "";
 
-    // Get revenue and discount data to compute expenses (cost ≈ 35% of revenue, discounts are real expenses)
-    const [summary, monthly, byService] = await Promise.all([
-      sql`
-        SELECT
-          COALESCE(SUM(total_amount), 0) AS total_revenue,
-          COALESCE(SUM(discount), 0) AS total_discounts,
-          COALESCE(SUM(tax_amount), 0) AS total_tax,
-          COUNT(*)::int AS total_orders,
-          COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END)::int AS completed_orders
-        FROM orders WHERE is_deleted = false
-      `,
-      sql`
-        SELECT
-          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YY') AS month,
-          DATE_TRUNC('month', created_at) AS month_date,
-          COALESCE(SUM(total_amount), 0) AS revenue,
-          COALESCE(SUM(discount), 0) AS discounts,
-          COALESCE(SUM(total_amount) * 0.35, 0) AS estimated_cost
-        FROM orders WHERE is_deleted = false AND status = 'COMPLETED'
-          AND created_at >= NOW() - INTERVAL '6 months'
-        GROUP BY DATE_TRUNC('month', created_at)
-        ORDER BY DATE_TRUNC('month', created_at) ASC
-      `,
-      sql`
-        SELECT service_type,
-          COUNT(*)::int AS jobs,
-          COALESCE(SUM(total_amount), 0) AS revenue,
-          COALESCE(SUM(discount), 0) AS discounts
-        FROM orders WHERE is_deleted = false
-        GROUP BY service_type
-      `,
-    ]);
+    let expenses: any[];
+    if (category && date_from && date_to) {
+      expenses = await sql`
+        SELECT id, category, description, amount, expense_date, reference, created_at
+        FROM expenses WHERE is_deleted = false
+        AND category = ${category}
+        AND expense_date BETWEEN ${date_from}::date AND ${date_to}::date
+        ORDER BY expense_date DESC, created_at DESC
+      `;
+    } else if (category) {
+      expenses = await sql`
+        SELECT id, category, description, amount, expense_date, reference, created_at
+        FROM expenses WHERE is_deleted = false AND category = ${category}
+        ORDER BY expense_date DESC, created_at DESC
+      `;
+    } else if (date_from && date_to) {
+      expenses = await sql`
+        SELECT id, category, description, amount, expense_date, reference, created_at
+        FROM expenses WHERE is_deleted = false
+        AND expense_date BETWEEN ${date_from}::date AND ${date_to}::date
+        ORDER BY expense_date DESC, created_at DESC
+      `;
+    } else {
+      expenses = await sql`
+        SELECT id, category, description, amount, expense_date, reference, created_at
+        FROM expenses WHERE is_deleted = false
+        ORDER BY expense_date DESC, created_at DESC
+      `;
+    }
 
-    const s = summary[0];
-    const totalRevenue = Number(s.total_revenue);
-    const estCost = totalRevenue * 0.35;
-    const profit = totalRevenue - estCost - Number(s.total_discounts);
+    // Monthly summary
+    const [monthlySummary] = await sql`
+      SELECT
+        COALESCE(SUM(amount), 0)::float AS total,
+        COALESCE(SUM(amount) FILTER (
+          WHERE date_trunc('month', expense_date) = date_trunc('month', CURRENT_DATE)
+        ), 0)::float AS this_month
+      FROM expenses WHERE is_deleted = false
+    `;
 
     return NextResponse.json({
+      expenses: expenses.map((e: any) => ({ ...e, amount: Number(e.amount) })),
       summary: {
-        total_revenue: totalRevenue,
-        estimated_cost: Math.round(estCost),
-        total_discounts: Number(s.total_discounts),
-        gross_profit: Math.round(profit),
-        margin_pct: totalRevenue > 0 ? Math.round((profit / totalRevenue) * 100) : 0,
-        total_orders: s.total_orders,
-        completed_orders: s.completed_orders,
+        total: Number(monthlySummary?.total ?? 0),
+        this_month: Number(monthlySummary?.this_month ?? 0),
       },
-      monthly: monthly.map((m: any) => ({
-        month: m.month,
-        revenue: Number(m.revenue),
-        discounts: Number(m.discounts),
-        estimated_cost: Number(m.estimated_cost),
-        profit: Number(m.revenue) - Number(m.estimated_cost) - Number(m.discounts),
-      })),
-      by_service: byService.map((b: any) => ({
-        service_type: b.service_type,
-        jobs: b.jobs,
-        revenue: Number(b.revenue),
-        discounts: Number(b.discounts),
-      })),
     });
-  } catch (err) { console.error(err); return NextResponse.json({ detail: "Failed" }, { status: 500 }); }
+  } catch (err) {
+    console.error("[Expenses GET]", err);
+    return NextResponse.json({ detail: "Failed to load expenses" }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const authResult = requireAuthPayload(req);
+  if ("error" in authResult) return authResult.error;
+  const userId = authResult.payload.sub;
+  try {
+    const body = await req.json();
+    const { category, description, amount, expense_date, reference } = body;
+
+    const validCategories = ["VEHICLE", "EQUIPMENT", "SUPPLIES", "STAFF", "UTILITIES", "OTHER"];
+    if (!description?.trim()) return NextResponse.json({ detail: "Description is required" }, { status: 400 });
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return NextResponse.json({ detail: "Valid amount is required" }, { status: 400 });
+    if (!expense_date) return NextResponse.json({ detail: "Date is required" }, { status: 400 });
+    if (!validCategories.includes(category)) return NextResponse.json({ detail: "Invalid category" }, { status: 400 });
+
+    const sql = getDb();
+    const rows = await sql`
+      INSERT INTO expenses(id, category, description, amount, expense_date, reference, recorded_by, is_deleted, created_at, updated_at)
+      VALUES(gen_random_uuid(), ${category}::expensecategory, ${description.trim()}, ${Number(amount)}, ${expense_date}::date, ${reference || null}, ${userId}::uuid, false, now(), now())
+      RETURNING id, category, description, amount, expense_date, reference, created_at
+    `;
+    return NextResponse.json({ ...rows[0], amount: Number(rows[0].amount) }, { status: 201 });
+  } catch (err) {
+    console.error("[Expenses POST]", err);
+    return NextResponse.json({ detail: "Failed to record expense" }, { status: 500 });
+  }
 }

@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PrimeX CRM — Frontend
 
-## Getting Started
+Production-ready Next.js CRM for PrimeX Services (Solar Cleaning, Tank Cleaning, AMC).
 
-First, run the development server:
+## Tech Stack
+- **Next.js 16** (App Router) + TypeScript
+- **Neon PostgreSQL** (serverless, direct connection)
+- **shadcn/ui** + Tailwind CSS + Framer Motion
+- **Recharts** for analytics
+
+## Features
+- 22 pages, 15 API endpoints — all working with real Neon DB
+- JWT authentication (bcryptjs)
+- Dashboard, Customers, Orders, Solar, Tank, AMC, Calendar, Reports, Invoices, Payments, Quotations, Contracts, Expenses, Employees, Notifications, Settings
+
+## Deploy to Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Raj-3200/primex-frontend)
+
+### Environment Variables (Required)
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Your Neon PostgreSQL connection string |
+| `JWT_SECRET` | A random 32+ character secret key |
+
+### Quick Deploy
+1. Import this repo on [vercel.com/new](https://vercel.com/new)
+2. Add the 2 environment variables above
+3. Click Deploy ✅
+
+## Local Development
 
 ```bash
+npm install
+cp .env.example .env.local
+# Fill in DATABASE_URL and JWT_SECRET in .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Login:** `admin@primex.com` / `Admin@123`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── app/
+│   ├── (auth)/login/       # Login page
+│   ├── (dashboard)/        # All 22 CRM pages
+│   └── api/                # 15 serverless API routes
+├── components/             # Shared UI components
+├── features/               # Feature-specific logic
+├── stores/                 # Zustand state (auth, sidebar)
+└── lib/                    # Utilities
+```

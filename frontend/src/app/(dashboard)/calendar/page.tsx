@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE } from "@/lib/backend";
 
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -74,7 +75,7 @@ async function fetchCalendar(): Promise<{ jobs: CalendarJob[] }> {
     typeof window !== "undefined"
       ? localStorage.getItem("access_token") || ""
       : "";
-  const res = await fetch("/api/calendar", {
+  const res = await fetch(`${API_BASE}/calendar`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error("Failed to fetch calendar data");

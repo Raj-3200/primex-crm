@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import jwt from "jsonwebtoken";
-
-const DB = "postgresql://neondb_owner:npg_R2ABjSL4EfPT@ep-royal-sun-adbm2icx-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require";
-const SECRET = process.env.JWT_SECRET || "primex-crm-secret-key-2024-neon-production";
-
-function auth(req: NextRequest): { sub: string; role: string } {
-  const token = (req.headers.get("authorization") || "").replace("Bearer ", "").trim();
-  if (!token) throw new Error("No token");
-  return jwt.verify(token, SECRET, { algorithms: ["HS256"] }) as { sub: string; role: string };
-}
+import { requireAuth, requireAuthPayload, DB_URL } from "@/lib/server-auth";
 
 function mapOrder(r: any) {
   return { ...r, total_amount: Number(r.total_amount), subtotal: Number(r.subtotal), discount: Number(r.discount), tax_amount: Number(r.tax_amount) };
@@ -17,7 +8,8 @@ function mapOrder(r: any) {
 
 // GET /api/orders — paginated list with filters
 export async function GET(req: NextRequest) {
-  try { auth(req); } catch { return NextResponse.json({ detail: "Unauthorized" }, { status: 401 }); }
+  const authError = requireAuth(req);
+  if (authError) return authError;
 
   const { searchParams } = new URL(req.url);
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
@@ -30,7 +22,7 @@ export async function GET(req: NextRequest) {
   const sp = search ? `%${search}%` : "";
 
   try {
-    const sql = neon(DB);
+    const sql = neon(DB_URL);
     let rows: any[], countRows: any[];
 
     // No filters — most common case
@@ -91,8 +83,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/orders
 export async function POST(req: NextRequest) {
-  let userId: string;
-  try { const p = auth(req); userId = p.sub; } catch { return NextResponse.json({ detail: "Unauthorized" }, { status: 401 }); }
+  const authResult = requireAuthPayload(req);
+  if ('error' in authResult) return authResult.error;
+  const userId = authResult.payload.sub;
 
   try {
     const body = await req.json();
@@ -101,10 +94,19 @@ export async function POST(req: NextRequest) {
     if (!customer_id) return NextResponse.json({ detail: "Customer is required" }, { status: 400 });
     if (!service_type) return NextResponse.json({ detail: "Service type is required" }, { status: 400 });
 
-    const sql = neon(DB);
-    const countRow = await sql`SELECT COUNT(*)::int AS cnt FROM orders WHERE is_deleted=false`;
-    const num = String((countRow[0]?.cnt ?? 0) + 1).padStart(4, "0");
-    const order_number = `PX-${new Date().getFullYear()}-${num}`;
+    const sql = neon(DB_URL);
+    const year = new Date().getFullYear();
+    const likePattern = `PX-${year}-%`;
+    const maxRow = await sql`
+      SELECT COALESCE(
+        MAX(CAST(SPLIT_PART(order_number, '-', 3) AS INTEGER)),
+        0
+      ) AS max_num
+      FROM orders
+      WHERE order_number LIKE ${likePattern}
+    `;
+    const nextNum = (maxRow[0]?.max_num ?? 0) + 1;
+    const order_number = `PX-${year}-${String(nextNum).padStart(4, '0')}`;
 
     const sub = Number(subtotal) || 0;
     const disc = Number(discount) || 0;
@@ -113,21 +115,49 @@ export async function POST(req: NextRequest) {
     const tax_amount = parseFloat((taxable * taxRate / 100).toFixed(2));
     const total_amount = parseFloat((taxable + tax_amount).toFixed(2));
 
+    // Safe UUID helper — avoids null::uuid cast errors in PostgreSQL
+    const safeUUID = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
+
     const orderRows = await sql`
-      INSERT INTO orders(id,order_number,customer_id,service_type,status,scheduled_date,scheduled_time,subtotal,discount,tax_rate,tax_amount,total_amount,notes,assigned_to,created_by,is_deleted)
-      VALUES(gen_random_uuid(),${order_number},${customer_id}::uuid,${service_type},'PENDING',${scheduled_date||null},${scheduled_time||null},${sub},${disc},${taxRate},${tax_amount},${total_amount},${notes||null},${assigned_to||null}::uuid,${userId}::uuid,false)
-      RETURNING id,order_number,service_type,status,scheduled_date,scheduled_time,subtotal,discount,tax_rate,tax_amount,total_amount,notes,customer_id,created_at
+      INSERT INTO orders(
+        id, order_number, customer_id, service_type, status,
+        scheduled_date, scheduled_time, subtotal, discount, tax_rate,
+        tax_amount, total_amount, notes, assigned_to, created_by, is_deleted
+      )
+      VALUES(
+        gen_random_uuid(),
+        ${order_number},
+        ${safeUUID(customer_id)}::uuid,
+        ${service_type},
+        'PENDING',
+        ${scheduled_date || null},
+        ${scheduled_time || null},
+        ${sub},
+        ${disc},
+        ${taxRate},
+        ${tax_amount},
+        ${total_amount},
+        ${notes || null},
+        ${safeUUID(assigned_to)},
+        ${safeUUID(userId)}::uuid,
+        false
+      )
+      RETURNING id, order_number, service_type, status, scheduled_date,
+                scheduled_time, subtotal, discount, tax_rate, tax_amount,
+                total_amount, notes, customer_id, created_at
     `;
+
 
     const order = orderRows[0];
 
+    // Insert service details — silently ignore if detail tables don't exist yet
     if (service_type === "SOLAR" && solar_detail) {
       const { panel_count, capacity_kw, roof_type, panel_type, remarks } = solar_detail;
-      await sql`INSERT INTO solar_cleaning_details(id,order_id,panel_count,capacity_kw,roof_type,panel_type,remarks) VALUES(gen_random_uuid(),${order.id}::uuid,${panel_count||0},${capacity_kw||0},${roof_type||'FLAT'},${panel_type||'MONOCRYSTALLINE'},${remarks||null})`;
+      await sql`INSERT INTO solar_cleaning_details(id,order_id,panel_count,capacity_kw,roof_type,panel_type,remarks) VALUES(gen_random_uuid(),${order.id}::uuid,${panel_count||0},${capacity_kw||0},${roof_type||'FLAT'},${panel_type||'MONOCRYSTALLINE'},${remarks||null})`.catch(() => {});
     }
     if ((service_type === "TANK" || service_type === "COMBINED") && tank_detail) {
       const { tank_type, capacity_liters, number_of_tanks, chemical_used, remarks } = tank_detail;
-      await sql`INSERT INTO tank_cleaning_details(id,order_id,tank_type,capacity_liters,number_of_tanks,chemical_used,remarks) VALUES(gen_random_uuid(),${order.id}::uuid,${tank_type||'OVERHEAD'},${capacity_liters||0},${number_of_tanks||1},${chemical_used||null},${remarks||null})`;
+      await sql`INSERT INTO tank_cleaning_details(id,order_id,tank_type,capacity_liters,number_of_tanks,chemical_used,remarks) VALUES(gen_random_uuid(),${order.id}::uuid,${tank_type||'OVERHEAD'},${capacity_liters||0},${number_of_tanks||1},${chemical_used||null},${remarks||null})`.catch(() => {});
     }
 
     await sql`INSERT INTO activity_logs(id,order_id,user_id,action,details,entity_type,entity_id) VALUES(gen_random_uuid(),${order.id}::uuid,${userId}::uuid,'ORDER_CREATED','Order created','order',${order.id})`.catch(()=>{});

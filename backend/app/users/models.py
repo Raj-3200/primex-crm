@@ -51,6 +51,15 @@ class User(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     activity_logs: Mapped[list] = relationship(
         "ActivityLog", back_populates="user"
     )
+    recorded_payments: Mapped[list] = relationship(
+        "Payment", back_populates="recorded_by_user", foreign_keys="Payment.recorded_by"
+    )
+    recorded_expenses: Mapped[list] = relationship(
+        "Expense", back_populates="recorded_by_user", foreign_keys="Expense.recorded_by"
+    )
+    uploaded_documents: Mapped[list] = relationship(
+        "Document", back_populates="uploaded_by_user", foreign_keys="Document.uploaded_by"
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.email} [{self.role}]>"

@@ -48,3 +48,5 @@ inspect_schema.mjs
 t.js
 db_check.js
 clear_data.js
+
+.vercel

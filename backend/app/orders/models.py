@@ -121,6 +121,9 @@ class Order(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         uselist=False,
     )
     activity_logs: Mapped[list] = relationship("ActivityLog", back_populates="order")
+    payments: Mapped[list] = relationship(
+        "Payment", back_populates="order", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Order {self.order_number} [{self.status}]>"

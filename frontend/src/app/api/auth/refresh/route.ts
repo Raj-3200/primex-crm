@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import jwt from "jsonwebtoken";
+import { DB_URL, SECRET } from "@/lib/server-auth";
 
-const DB = "postgresql://neondb_owner:npg_R2ABjSL4EfPT@ep-royal-sun-adbm2icx-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require";
-const SECRET = process.env.JWT_SECRET || "primex-crm-secret-key-2024-neon-production";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     const payload = jwt.verify(refresh_token, SECRET, { algorithms: ["HS256"] }) as { sub: string };
 
-    const sql = neon(DB);
+    const sql = neon(DB_URL);
     const rows = await sql`
       SELECT id, email, role, is_active FROM users
       WHERE id = ${payload.sub}::uuid AND is_deleted = false LIMIT 1

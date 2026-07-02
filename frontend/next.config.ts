@@ -1,26 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // NOTE: Do NOT set output: "standalone" when deploying on Vercel
-  // Vercel handles output optimization automatically
-
   devIndicators: false,
 
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**.vercel.app",
-      },
-      {
-        protocol: "https",
-        hostname: "**.neon.tech",
-      },
+      { protocol: "https", hostname: "**.vercel.app" },
+      { protocol: "https", hostname: "**.neon.tech" },
+      { protocol: "https", hostname: "**.supabase.co" },
+      { protocol: "https", hostname: "**.onrender.com" },
     ],
     formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 86400,
   },
 
-  // Security headers
+  // Production security headers
+  // NOTE: Do NOT set Cache-Control on /_next/static — Vercel handles that automatically
   async headers() {
     return [
       {
@@ -28,17 +23,29 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-DNS-Prefetch-Control", value: "on" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(), microphone=(), geolocation=(self), payment=()",
           },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+        ],
+      },
+      {
+        // API routes — no caching
+        source: "/api/(.*)",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
         ],
       },
     ];
   },
 
-  // Compiler optimizations
+  // Strip console.log in production builds
   compiler: {
     removeConsole:
       process.env.NODE_ENV === "production"
@@ -46,9 +53,20 @@ const nextConfig: NextConfig = {
         : false,
   },
 
-  // Package import optimizations
+  // Bundle optimizations
   experimental: {
-    optimizePackageImports: ["lucide-react", "recharts"],
+    optimizePackageImports: ["lucide-react", "recharts", "@radix-ui/react-dialog"],
+  },
+
+  // Root redirect to dashboard
+  async redirects() {
+    return [
+      {
+        source: "/",
+        destination: "/dashboard",
+        permanent: false,
+      },
+    ];
   },
 };
 

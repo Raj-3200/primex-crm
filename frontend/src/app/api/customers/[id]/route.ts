@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { DB_URL, requireAuth, SECRET } from "@/lib/server-auth";
 import jwt from "jsonwebtoken";
-
-const DB = "postgresql://neondb_owner:npg_R2ABjSL4EfPT@ep-royal-sun-adbm2icx-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require";
-const SECRET = process.env.JWT_SECRET || "primex-crm-secret-key-2024-neon-production";
 
 function auth(req: NextRequest): { sub: string; role: string } {
   const token = (req.headers.get("authorization") || "").replace("Bearer ", "").trim();
@@ -13,12 +11,13 @@ function auth(req: NextRequest): { sub: string; role: string } {
 
 type Params = { params: Promise<{ id: string }> };
 
+
 // GET /api/customers/[id]
 export async function GET(req: NextRequest, { params }: Params) {
   try { auth(req); } catch { return NextResponse.json({ detail: "Unauthorized" }, { status: 401 }); }
   const { id } = await params;
   try {
-    const sql = neon(DB);
+    const sql = neon(DB_URL);
     const [customers, orders, stats] = await Promise.all([
       sql`SELECT c.*, cb.full_name AS created_by_name
           FROM customers c
@@ -49,7 +48,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const body = await req.json();
     const { name, phone, alternate_phone, email, address, latitude, longitude,
             maps_url, gst_number, property_type, lead_source, notes } = body;
-    const sql = neon(DB);
+    const sql = neon(DB_URL);
     const rows = await sql`
       UPDATE customers SET
         name = COALESCE(${name || null}, name),
@@ -61,8 +60,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
         longitude = ${longitude || null},
         maps_url = ${maps_url || null},
         gst_number = ${gst_number || null},
-        property_type = COALESCE(${property_type || null}, property_type),
-        lead_source = COALESCE(${lead_source || null}, lead_source),
+        property_type = COALESCE(${property_type || null}::text, property_type::text)::propertytypenum,
+        lead_source = COALESCE(${lead_source || null}::text, lead_source::text)::leadsourceenum,
         notes = ${notes || null},
         updated_at = NOW()
       WHERE id = ${id}::uuid AND is_deleted = false
@@ -75,6 +74,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
   } catch (err) { console.error(err); return NextResponse.json({ detail: "Failed to update" }, { status: 500 }); }
 }
 
+// PATCH /api/customers/[id] — alias for PUT
+export const PATCH = PUT;
+
+
 // DELETE /api/customers/[id]
 export async function DELETE(req: NextRequest, { params }: Params) {
   let userRole: string;
@@ -82,7 +85,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   if (userRole !== "ADMIN") return NextResponse.json({ detail: "Admin only" }, { status: 403 });
   const { id } = await params;
   try {
-    const sql = neon(DB);
+    const sql = neon(DB_URL);
     await sql`UPDATE customers SET is_deleted = true, updated_at = NOW() WHERE id = ${id}::uuid`;
     return NextResponse.json({ detail: "Deleted" });
   } catch (err) { console.error(err); return NextResponse.json({ detail: "Failed to delete" }, { status: 500 }); }

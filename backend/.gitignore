@@ -1,0 +1,58 @@
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads (user-uploaded files)
+uploads/*
+!uploads/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Docker override
+docker-compose.override.yml
+
+# Alembic compiled
+alembic/__pycache__/

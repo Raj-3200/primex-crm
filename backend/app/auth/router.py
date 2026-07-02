@@ -21,11 +21,18 @@ from app.auth.service import AuthService
 from app.core.database import get_db
 from app.core.dependencies import CurrentUser, AdminOnly
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("60/minute")
 async def login(
+    request: Request,
     data: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenResponse:

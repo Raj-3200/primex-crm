@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE } from "@/lib/backend";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, BellOff, CheckCheck, Circle } from "lucide-react";
@@ -13,7 +14,7 @@ function getToken() {
 }
 
 async function fetchNotifications() {
-  const res = await fetch("/api/notifications", {
+  const res = await fetch(`${API_BASE}/notifications`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new Error("Failed to fetch notifications");
@@ -21,7 +22,7 @@ async function fetchNotifications() {
 }
 
 async function markRead(payload: { id?: string; markAllRead?: boolean }) {
-  const res = await fetch("/api/notifications", {
+  const res = await fetch(`${API_BASE}/notifications`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getToken()}`,

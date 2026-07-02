@@ -1,137 +1,384 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
-  TrendingUp, IndianRupee, Percent, ShoppingBag,
-  ArrowUp, ArrowDown, BarChart3,
+  Receipt, Plus, Search, Pencil, Trash2,
+  Car, Wrench, ShoppingCart, Users, Zap, MoreHorizontal,
+  DollarSign, TrendingDown, Calendar,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar, Legend,
-} from "recharts";
-import { Card } from "@/components/ui/card";
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
+import { QueryError } from "@/components/ui/error-boundary";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { apiFetch } from "@/lib/backend";
 
-export default function ExpensesPage() {
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["expenses"],
-    queryFn: async () => {
-      const token = localStorage.getItem("access_token");
-      const res = await fetch("/api/expenses", { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
+// ─── Types & constants ────────────────────────────────────────────────────────
+type ExpenseCategory = "VEHICLE" | "EQUIPMENT" | "SUPPLIES" | "STAFF" | "UTILITIES" | "OTHER";
+
+interface Expense {
+  id: string;
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  expense_date: string;
+  reference: string | null;
+  created_at: string;
+}
+
+const categoryConfig: Record<ExpenseCategory, { label: string; icon: React.ElementType; classes: string }> = {
+  VEHICLE:   { label: "Vehicle",   icon: Car,         classes: "bg-blue-50 text-blue-700" },
+  EQUIPMENT: { label: "Equipment", icon: Wrench,       classes: "bg-orange-50 text-orange-700" },
+  SUPPLIES:  { label: "Supplies",  icon: ShoppingCart, classes: "bg-green-50 text-green-700" },
+  STAFF:     { label: "Staff",     icon: Users,        classes: "bg-purple-50 text-purple-700" },
+  UTILITIES: { label: "Utilities", icon: Zap,          classes: "bg-yellow-50 text-yellow-700" },
+  OTHER:     { label: "Other",     icon: Receipt,      classes: "bg-gray-100 text-gray-700" },
+};
+
+// ─── Schema ──────────────────────────────────────────────────────────────────
+const expenseSchema = z.object({
+  category: z.enum(["VEHICLE", "EQUIPMENT", "SUPPLIES", "STAFF", "UTILITIES", "OTHER"]),
+  description: z.string().min(3, "Description required"),
+  amount: z.number().positive("Amount must be positive"),
+  expense_date: z.string().min(1, "Date required"),
+  reference: z.string().optional(),
+});
+
+type ExpenseForm = z.infer<typeof expenseSchema>;
+
+// ─── Expense Dialog ───────────────────────────────────────────────────────────
+function ExpenseDialog({
+  expense, open, onClose,
+}: { expense?: Expense; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const isEdit = !!expense;
+
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<ExpenseForm>({
+    resolver: zodResolver(expenseSchema),
+    defaultValues: expense
+      ? {
+          category: expense.category,
+          description: expense.description,
+          amount: Number(expense.amount),
+          expense_date: expense.expense_date.split("T")[0],
+          reference: expense.reference ?? "",
+        }
+      : {
+          category: "OTHER",
+          expense_date: new Date().toISOString().split("T")[0],
+        },
+  });
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: (data: ExpenseForm) =>
+      apiFetch(isEdit ? `/expenses/${expense!.id}` : "/expenses", {
+        method: isEdit ? "PATCH" : "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      toast.success(isEdit ? "Expense updated" : "Expense recorded");
+      onClose();
     },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit Expense" : "Record Expense"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit((d) => mutate(d))} className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Category *</Label>
+            <Select defaultValue={watch("category")} onValueChange={(v) => setValue("category", v as ExpenseCategory)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(categoryConfig).map(([key, cfg]) => (
+                  <SelectItem key={key} value={key}>
+                    <div className="flex items-center gap-2">
+                      <cfg.icon className="h-4 w-4" />{cfg.label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Description *</Label>
+            <Textarea {...register("description")} placeholder="What was this expense for?" rows={2} />
+            {errors.description && <p className="text-xs text-destructive">{errors.description.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Amount *</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                <Input
+                  type="number" step="0.01" className="pl-7" placeholder="0.00"
+                  {...register("amount", { valueAsNumber: true })}
+                />
+              </div>
+              {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date *</Label>
+              <Input type="date" {...register("expense_date")} />
+              {errors.expense_date && <p className="text-xs text-destructive">{errors.expense_date.message}</p>}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Reference / Bill No.</Label>
+            <Input {...register("reference")} placeholder="Receipt, invoice, or bill number" />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Saving…" : isEdit ? "Save changes" : "Record expense"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+export default function ExpensesPage() {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | undefined>();
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const qc = useQueryClient();
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["expenses"],
+    queryFn: () => apiFetch<{ expenses?: Expense[]; summary?: Record<string, number> }>("/expenses"),
     staleTime: 60_000,
   });
 
-  if (isLoading) return (
-    <div className="space-y-6">
-      <Skeleton className="h-8 w-40" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
-      </div>
-      <Skeleton className="h-72 rounded-2xl" />
-    </div>
-  );
+  const { mutate: deleteExpense, isPending: isDeleting } = useMutation({
+    mutationFn: (id: string) => apiFetch(`/expenses/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      toast.success("Expense deleted");
+      setDeleteId(null);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
-  if (isError || !data) return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold font-display">Expenses & Financials</h1>
-      <Card className="p-12 text-center rounded-2xl">
-        <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-        <p className="text-muted-foreground">Failed to load expense data</p>
-      </Card>
-    </div>
-  );
+  const expenses: Expense[] = data?.expenses ?? [];
+  const summary = data?.summary ?? {};
 
-  const { summary, monthly, by_service } = data;
+  const filtered = expenses.filter((e) => {
+    const matchSearch = !search || e.description.toLowerCase().includes(search.toLowerCase());
+    const matchCat = categoryFilter === "ALL" || e.category === categoryFilter;
+    return matchSearch && matchCat;
+  });
+
+  const totalAmount = filtered.reduce((acc, e) => acc + Number(e.amount), 0);
+
+  const statCards = [
+    { label: "Total Expenses", value: formatCurrency(summary.total ?? 0), icon: TrendingDown, bg: "bg-red-50", color: "text-red-500" },
+    { label: "This Month", value: formatCurrency(summary.this_month ?? 0), icon: Calendar, bg: "bg-orange-50", color: "text-orange-500" },
+    { label: "Transactions", value: String(expenses.length), icon: Receipt, bg: "bg-blue-50", color: "text-blue-500" },
+    { label: "Avg per Entry", value: formatCurrency(expenses.length ? (summary.total ?? 0) / expenses.length : 0), icon: DollarSign, bg: "bg-purple-50", color: "text-purple-500" },
+  ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground font-display">Expenses & Financials</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Revenue, cost, and profit analysis</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-display text-foreground">Expenses</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Track operational costs and business expenses</p>
+        </div>
+        <Button onClick={() => { setEditingExpense(undefined); setDialogOpen(true); }} className="gap-2">
+          <Plus className="h-4 w-4" />Record Expense
+        </Button>
       </div>
 
-      {/* KPI Cards */}
-      <motion.div className="grid grid-cols-2 md:grid-cols-4 gap-4"
-        initial="hidden" animate="visible"
-        variants={{ visible: { transition: { staggerChildren: 0.06 } }, hidden: {} }}>
-        {[
-          { label: "Gross Revenue", value: formatCurrency(summary.total_revenue), icon: IndianRupee, color: "text-primary", trend: "up" },
-          { label: "Est. Costs (35%)", value: formatCurrency(summary.estimated_cost), icon: TrendingUp, color: "text-red-500", trend: "down" },
-          { label: "Gross Profit", value: formatCurrency(summary.gross_profit), icon: ArrowUp, color: "text-green-500", trend: "up" },
-          { label: "Margin", value: `${summary.margin_pct}%`, icon: Percent, color: "text-blue-500", trend: summary.margin_pct > 50 ? "up" : "down" },
-        ].map((card) => (
-          <motion.div key={card.label} variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}>
-            <Card className="p-5 rounded-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs text-muted-foreground font-medium">{card.label}</p>
-                <card.icon className={`w-4 h-4 ${card.color}`} />
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {statCards.map((card) => (
+          <div key={card.label} className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-3 mb-2">
+              <div className={`rounded-xl p-2 ${card.bg}`}>
+                <card.icon className={`h-5 w-5 ${card.color}`} />
               </div>
-              <p className="text-2xl font-bold font-display">{card.value}</p>
-              <div className={`flex items-center gap-1 mt-1 text-xs ${card.trend === "up" ? "text-green-500" : "text-red-500"}`}>
-                {card.trend === "up" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-                <span>vs last period</span>
-              </div>
-            </Card>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Monthly Chart */}
-      <Card className="p-6 rounded-2xl">
-        <h2 className="text-base font-bold font-display mb-1">Monthly P&L</h2>
-        <p className="text-xs text-muted-foreground mb-6">Revenue vs estimated costs vs profit — last 6 months</p>
-        {monthly.length === 0 ? (
-          <div className="flex items-center justify-center h-52 text-sm text-muted-foreground">No completed orders yet</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthly} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(v: any) => formatCurrency(v)} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12 }} />
-              <Legend iconType="circle" iconSize={8} />
-              <Bar dataKey="revenue" name="Revenue" fill="#E8722A" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="estimated_cost" name="Est. Cost" fill="#EF4444" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="profit" name="Profit" fill="#22C55E" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </Card>
-
-      {/* Service Breakdown */}
-      <Card className="p-6 rounded-2xl">
-        <h2 className="text-base font-bold font-display mb-4">Revenue by Service Type</h2>
-        {by_service.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">No service data yet</p>
-        ) : (
-          <div className="space-y-4">
-            {by_service.map((s: any) => {
-              const totalRev = by_service.reduce((acc: number, b: any) => acc + b.revenue, 0) || 1;
-              const pct = Math.round((s.revenue / totalRev) * 100);
-              return (
-                <div key={s.service_type}>
-                  <div className="flex justify-between items-center mb-1 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{s.service_type === "SOLAR" ? "Solar Cleaning" : s.service_type === "TANK" ? "Tank Cleaning" : "Combined (AMC)"}</span>
-                      <span className="text-muted-foreground text-xs">{s.jobs} jobs</span>
-                    </div>
-                    <span className="font-semibold">{formatCurrency(s.revenue)} ({pct}%)</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }}
-                      className={`h-full rounded-full ${s.service_type === "SOLAR" ? "bg-amber-500" : s.service_type === "TANK" ? "bg-blue-500" : "bg-green-500"}`} />
-                  </div>
-                </div>
-              );
-            })}
+              <p className="text-xs text-muted-foreground">{card.label}</p>
+            </div>
+            {isLoading ? <Skeleton className="h-7 w-24" /> : (
+              <p className="text-2xl font-bold text-foreground">{card.value}</p>
+            )}
           </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 border-b border-border">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search expenses…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Categories</SelectItem>
+              {Object.entries(categoryConfig).map(([key, cfg]) => (
+                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {filtered.length > 0 && (
+            <p className="text-sm text-muted-foreground ml-auto whitespace-nowrap">
+              Total: <span className="font-semibold text-foreground">{formatCurrency(totalAmount)}</span>
+            </p>
+          )}
+        </div>
+
+        {isError ? (
+          <div className="p-6"><QueryError message="Failed to load expenses" onRetry={refetch} /></div>
+        ) : isLoading ? (
+          <div className="divide-y divide-border">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 p-4">
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-5 w-20" />
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
+              <Receipt className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="font-medium text-foreground">No expenses recorded</p>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">
+              {search ? `No results for "${search}"` : "Start tracking your business expenses."}
+            </p>
+            {!search && (
+              <Button size="sm" onClick={() => setDialogOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" />Record First Expense
+              </Button>
+            )}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Category</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((exp) => {
+                const cc = categoryConfig[exp.category] ?? categoryConfig.OTHER;
+                return (
+                  <TableRow key={exp.id} className="hover:bg-muted/30">
+                    <TableCell>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${cc.classes}`}>
+                        <cc.icon className="h-3 w-3" />{cc.label}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-medium max-w-56 truncate">{exp.description}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{exp.reference || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(exp.expense_date)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold text-red-600">
+                      {formatCurrency(Number(exp.amount))}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => { setEditingExpense(exp); setDialogOpen(true); }}>
+                            <Pencil className="h-4 w-4 mr-2" />Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setDeleteId(exp.id)} className="text-destructive">
+                            <Trash2 className="h-4 w-4 mr-2" />Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
-      </Card>
+      </div>
+
+      {/* Dialogs */}
+      <ExpenseDialog
+        expense={editingExpense}
+        open={dialogOpen}
+        onClose={() => { setDialogOpen(false); setEditingExpense(undefined); }}
+      />
+
+      <AlertDialog open={!!deleteId} onOpenChange={(v) => !v && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete expense?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteId && deleteExpense(deleteId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
